@@ -7,10 +7,19 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+
+     # Add a MongoDB service container
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
     steps:
-    # STEP 1: Checkout Code
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+        # ... your other setup steps ...
 
     # STEP 2: Install Dependencies
     - name: Set up Python
