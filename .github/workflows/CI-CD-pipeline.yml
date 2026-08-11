@@ -16,14 +16,13 @@ jobs:
           - 27017:27017
 
     steps:
-    - uses: actions/checkout@v4
+    # STEP 1: Repository Checkout (Upgraded to resolve Node 20 deprecation)
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # STEP 2: Install Dependencies & Setup Runtime (Consolidated & Upgraded to v5)
     - name: Set up Python
       uses: actions/setup-python@v5
-        # ... your other setup steps ...
-
-    # STEP 2: Install Dependencies
-    - name: Set up Python
-      uses: actions/setup-python@v4
       with:
         python-version: '3.11'
     
@@ -40,6 +39,7 @@ jobs:
         pytest test_app.py
 
     # STEP 4 & 5: Authenticate AWS, Build & Push Tagged Image
+    # (Using modern aws-actions targeting Node 24)
     - name: Configure AWS Credentials
       if: success()
       uses: aws-actions/configure-aws-credentials@v4
@@ -110,12 +110,12 @@ jobs:
         echo "Verification gate failed."
         exit 1
 
-    # STEP 8: Notify (Customized Success Email Alert)
+    # STEP 8: Notify (Customized Success Email Alert - Upgraded to v4)
     - name: Send Deployment Success Email
       if: success()
-      uses: dawidd6/action-send-mail@v3
+      uses: dawidd6/action-send-mail@v4
       with:
-        server_address: ://gmail.com
+        server_address: smtp.gmail.com
         server_port: 465
         username: ${{ secrets.SMTP_USER }}
         password: ${{ secrets.SMTP_PASS }}
@@ -131,10 +131,10 @@ jobs:
           
           All tests passed, and the container state is running under 'unless-stopped'.
 
-    # STEP 8: Notify (Customized Failure Email Alert)
+    # STEP 8: Notify (Customized Failure Email Alert - Upgraded to v4)
     - name: Send Deployment Failure Email
       if: failure()
-      uses: dawidd6/action-send-mail@v3
+      uses: dawidd6/action-send-mail@v4
       with:
         server_address: smtp.gmail.com
         server_port: 465
@@ -150,4 +150,3 @@ jobs:
           - Triggered By: ${{ github.actor }}
           
           Please review the GitHub Actions logging panel to isolate which sequence stage failed execution.
-
