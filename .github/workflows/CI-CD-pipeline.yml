@@ -75,7 +75,7 @@ jobs:
           
           # Run the newly built container with restart insurance policies
           docker run -d \
-            --name student-app \
+            --name test_student_db \
             -p 5000:5000 \
             -e MONGO_URI="${{ secrets.MONGO_URI }}" \
             --restart unless-stopped \
