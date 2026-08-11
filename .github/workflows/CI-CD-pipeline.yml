@@ -79,8 +79,8 @@ jobs:
           aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
           # Stop existing container safely if running
-          docker stop student-app || true
-          docker rm student-app || true
+          docker stop test_student_db || true
+          docker rm test_student_db || true
           
           # Run the newly built container with restart insurance policies
           docker run -d \
