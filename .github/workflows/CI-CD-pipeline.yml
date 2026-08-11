@@ -1,0 +1,144 @@
+name: CI/CD Production Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+    # STEP 1: Checkout Code
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # STEP 2: Install Dependencies
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest
+
+    # STEP 3: Test Execution
+    - name: Run Unit Tests
+      id: test_stage
+      run: |
+        pytest test_app.py
+
+    # STEP 4 & 5: Authenticate AWS, Build & Push Tagged Image
+    - name: Configure AWS Credentials
+      if: success()
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      if: success()
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, Tag, and Push Image to Amazon ECR
+      if: success()
+      id: build_stage
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    # STEP 6: Deploy Container to EC2 via SSH
+    - name: Deploy to EC2 Instance
+      if: success()
+      id: deploy_stage
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # Authenticate Docker daemon with ECR
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          
+          # Stop existing container safely if running
+          docker stop student-app || true
+          docker rm student-app || true
+          
+          # Run the newly built container with restart insurance policies
+          docker run -d \
+            --name student-app \
+            -p 5000:5000 \
+            -e MONGO_URI="${{ secrets.MONGO_URI }}" \
+            --restart unless-stopped \
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+
+    # STEP 7: Verify Deploy Gate (/health Check)
+    - name: Verify Live Health Endpoint
+      if: success()
+      id: verify_stage
+      run: |
+        echo "Waiting for app initialization..."
+        sleep 10
+        # Poll the live endpoint up to 5 times
+        for i in {1..5}; do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:5000/health || true)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Deployment verification successful with code 200!"
+            exit 0
+          fi
+          echo "Health check failed with status $STATUS. Retrying in 5 seconds..."
+          sleep 5
+        done
+        echo "Verification gate failed."
+        exit 1
+
+    # STEP 8: Notify (Customized Success Email Alert)
+    - name: Send Deployment Success Email
+      if: success()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: ://gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: "🚀 DEPLOYMENT SUCCESS: Commit ${{ github.sha }}"
+        to: ${{ secrets.NOTIFY_EMAIL }}
+        from: "CI-CD Pipeline <automation@yourdomain.com>"
+        body: |
+          The deployment pipeline completed successfully!
+          
+          - Commit SHA: ${{ github.sha }}
+          - Image Tag: ${{ github.sha }}
+          - Target Host: http://${{ secrets.EC2_HOST }}:5000/health
+          
+          All tests passed, and the container state is running under 'unless-stopped'.
+
+    # STEP 8: Notify (Customized Failure Email Alert)
+    - name: Send Deployment Failure Email
+      if: failure()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: ://gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: "❌ DEPLOYMENT FAILURE: Build Broken"
+        to: ${{ secrets.NOTIFY_EMAIL }}
+        from: "CI-CD Pipeline <automation@yourdomain.com>"
+        body: |
+          The pipeline execution failed. A broken application state was prevented from affecting runtime infrastructure.
+          
+          - Commit SHA: ${{ github.sha }}
+          - Triggered By: ${{ github.actor }}
+          
+          Please review the GitHub Actions logging panel to isolate which sequence stage failed execution.
+
