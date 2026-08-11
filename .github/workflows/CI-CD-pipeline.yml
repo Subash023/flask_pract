@@ -104,8 +104,8 @@ jobs:
             echo "Deployment verification successful with code 200!"
             exit 0
           fi
-          echo "Health check failed with status $STATUS. Retrying in 5 seconds..."
-          sleep 5
+          echo "Health check failed with status $STATUS. Retrying in 15 seconds..."
+          sleep 15
         done
         echo "Verification gate failed."
         exit 1
