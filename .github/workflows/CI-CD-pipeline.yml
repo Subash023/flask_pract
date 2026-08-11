@@ -99,7 +99,7 @@ jobs:
         sleep 10
         # Poll the live endpoint up to 5 times
         for i in {1..5}; do
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:5000/health || true)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://${{ secrets.EC2_HOST }}:5000/health || echo "000")
           if [ "$STATUS" -eq 200 ]; then
             echo "Deployment verification successful with code 200!"
             exit 0
