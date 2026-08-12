@@ -91,24 +91,13 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
 
     # STEP 7: Verify Deploy Gate (/health Check)
-    - name: Verify Live Health Endpoint
-      if: success()
-      id: verify_stage
-      run: |
-        echo "Waiting for app initialization..."
-        sleep 10
-        # Poll the live endpoint up to 5 times
-        for i in {1..5}; do
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://${{ secrets.EC2_HOST }}:5000/health || echo "000")
-          if [ "$STATUS" -eq 200 ]; then
-            echo "Deployment verification successful with code 200!"
-            exit 0
-          fi
-          echo "Health check failed with status $STATUS. Retrying in 15 seconds..."
-          sleep 15
-        done
-        echo "Verification gate failed."
-        exit 1
+    - name: Verify Deployment Gate
+      uses: niklasgasser/healthcheck-action@v3
+      with:
+        url: "http://***:5000/health"
+        max-attempts: 5
+        retry-delay: 15
+        timeout: 5
 
     # STEP 8: Notify (Customized Success Email Alert - Upgraded to v4)
     - name: Send Deployment Success Email
