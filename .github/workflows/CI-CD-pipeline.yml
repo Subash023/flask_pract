@@ -91,13 +91,19 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
 
     # STEP 7: Verify Deploy Gate (/health Check)
-    - name: Verify Deployment Gate
-      uses: niklasgasser/healthcheck-action@v3
-      with:
-        url: "http://***:5000/health"
-        max-attempts: 5
-        retry-delay: 15
-        timeout: 5
+    - name: Healthcheck Python API
+      run: |
+          echo "Checking app health..."
+          for i in {1..6}; do
+            if curl -s -f http://3.94.87.131:5000/; then
+              echo "App is healthy!"
+              exit 0
+            fi
+            echo "App not ready, retrying in 10 seconds..."
+            sleep 10
+          done
+          echo "Healthcheck failed!"
+          exit 1
 
     # STEP 8: Notify (Customized Success Email Alert - Upgraded to v4)
     - name: Send Deployment Success Email
