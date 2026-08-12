@@ -45,7 +45,7 @@ jobs:
         pytest test_app.py
 
     - name: Set Failure Stage (Test)
-      if: failure() && steps:test_stage.outcome == 'failure'
+      if: failure() && steps.test_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=test" >> $GITHUB_ENV
 
     # STEP 4 & 5: Authenticate AWS, Build & Push Tagged Image
@@ -67,7 +67,7 @@ jobs:
         docker tag ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
     - name: Set Failure Stage (Build)
-      if: failure() && steps:build_stage.outcome == 'failure'
+      if: failure() && steps.build_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=build" >> $GITHUB_ENV
 
     - name: Push to ECR
@@ -77,7 +77,7 @@ jobs:
         docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
     - name: Set Failure Stage (Push)
-      if: failure() && steps:push_stage.outcome == 'failure'
+      if: failure() && steps.push_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=push" >> $GITHUB_ENV
 
     - name: Setup SSH Key
@@ -125,7 +125,7 @@ jobs:
         EOF
 
     - name: Set Failure Stage (Deploy)
-      if: failure() && steps:deploy_stage.outcome == 'failure'
+      if: failure() && steps.deploy_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=deploy" >> $GITHUB_ENV
 
     - name: Notify Success
