@@ -95,7 +95,7 @@ jobs:
       run: |
           echo "Checking app health..."
           for i in {1..6}; do
-            if curl -s -f http://3.94.87.131:5000/; then
+            if curl -s -f http://***:5000/; then
               echo "App is healthy!"
               exit 0
             fi
