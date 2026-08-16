@@ -76,7 +76,7 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           # Authenticate Docker daemon with ECR
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+          aws ecr get-login-password --region *** | docker login --username AWS --password-stdin 311925399650.dkr.ecr.***.amazonaws.com 2>/dev/null
           
           # Stop existing container safely if running
           docker stop test_student_db || true
