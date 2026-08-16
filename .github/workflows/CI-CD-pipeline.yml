@@ -79,12 +79,12 @@ jobs:
           aws ecr get-login-password --region *** | docker login --username AWS --password-stdin 311925399650.dkr.ecr.***.amazonaws.com 2>/dev/null
           
           # Stop existing container safely if running
-          docker stop test_student_db || true
-          docker rm test_student_db || true
+          docker stop test-student-app || true
+          docker rm test-student-app || true
           
           # Run the newly built container with restart insurance policies
           docker run -d \
-            --name test_student_db \
+            --name test-student-app \
             -p 5000:5000 \
             -e MONGO_URI="${{ secrets.MONGO_URI }}" \
             --restart unless-stopped \
