@@ -102,8 +102,9 @@ jobs:
               --name test-student-app \
               -p 5000:5000 \
               --restart unless-stopped \
-              ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+              ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
+              
             # 4. Pipeline Verification Loop
             echo "Waiting for application to pass health check..."
             
