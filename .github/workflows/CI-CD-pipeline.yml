@@ -108,21 +108,26 @@ jobs:
             -e MONGO_URI="${{ secrets.MONGO_URI }}" \
             --restart unless-stopped \
             ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
-          
-          # Deployment Verification Gate
-          echo "Verifying health endpoint..."
-          sleep 30
-          for i in {1..5}; do
-            if curl -s http://localhost:${{ env.EC2_PORT }}/health | grep -q "UP"; then
-              echo "Health check PASSED"
-              exit 0
-            fi
-            echo "Waiting for container initialization..."
-            sleep 15
-          done
-          echo "Health check FAILED"
-          exit 1
-        EOF
+    
+    #Step 5 Verify Deploy Gate (/health Check)
+    - name: Verify Live Health Endpoint
+      if: success()
+      id: verify_stage
+      run: |
+        echo "Waiting for app initialization..."
+        sleep 10
+        # Poll the live endpoint up to 5 times
+        for i in {1..5}; do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:5000/health || true)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Deployment verification successful with code 200!"
+            exit 0
+          fi
+          echo "Health check failed with status $STATUS. Retrying in 5 seconds..."
+          sleep 5
+        done
+        echo "Verification gate failed."
+        exit 1
 
     - name: Set Failure Stage (Deploy)
       if: failure() && steps.deploy_stage.outcome == 'failure'
