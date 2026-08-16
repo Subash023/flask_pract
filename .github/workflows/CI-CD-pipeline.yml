@@ -104,7 +104,10 @@ jobs:
           # Launch new container
           docker run -d --name test-student-app -p ${{ env.EC2_PORT }}:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           
-          # 6. Deployment Verification Gate
+          # Deployment Verification Gate
+
+    - name: Validating Health Endpoint
+      run: |
           echo "Verifying health endpoint..."
           sleep 15
           for i in {1..5}; do
@@ -117,7 +120,6 @@ jobs:
           done
           echo "Health check FAILED"
           exit 1
-        EOF
 
     - name: Set Failure Stage (Deploy)
       if: failure() && steps.deploy_stage.outcome == 'failure'
