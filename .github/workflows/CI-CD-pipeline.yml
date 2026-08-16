@@ -80,64 +80,74 @@ jobs:
       if: failure() && steps.push_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=push" >> $GITHUB_ENV
 
-    - name: Setup SSH Key
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+  Depoly:
+    runs-on: ubuntu-latest   
+    steps:
+      - name: Deploy and Verify Health via SSH
+        uses: appleboy/ssh-action@master
+        with:
+           host: ${{ secrets.EC2_HOST }}
+           username: ${{ secrets.EC2_USERNAME }}
+           key: ${{ secrets.EC2_SSH_KEY }}
+           script: |
+            # 1. Pull the latest image
+            docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+            
+            # 2. Stop and remove old container
+            docker stop test-student-app || true
+            docker rm test-student-app || true
+            
+            # 3. Run the new container
+            docker run -d \
+              --name test-student-app \
+              -p 5000:5000 \
+              --restart unless-stopped \
+              ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
 
-    - name: Deploy to EC2
-      id: deploy_stage
-      run: |
-        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          # Log into ECR on target machine
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-          
-          # Clean up old container if running
-          docker stop test-student-app  || true
-          docker rm test-student-app  || true
-          
-          # Pull new image
-          docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          
-          # Launch new container
-          docker run -d --name test-student-app -p ${{ env.EC2_PORT }}:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          
-          # Deployment Verification Gate
+            # 4. Pipeline Verification Loop
+            echo "Waiting for application to pass health check..."
+            
+            TIMEOUT=60
+            ELAPSED=0
+            STATUS_URL="http://localhost:5000/health"
+            
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+              # Get the HTTP status code directly
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $STATUS_URL || true)
+              
+              if [ "$HTTP_STATUS" = "200" ]; then
+                echo "SUCCESS: Health endpoint returned HTTP 200 OK!"
+                exit 0
+              fi
+              
+              echo "Application status is $HTTP_STATUS. Retrying in 5 seconds..."
+              sleep 5
+              ELAPSED=$((ELAPSED + 5))
+            done
 
-    - name: Validating Health Endpoint
-      run: |
-          echo "Verifying health endpoint..."
-          sleep 15
-          for i in {1..5}; do
-            if curl -s http://localhost:${{ env.EC2_PORT }}/health | grep -q "UP"; then
-              echo "Health check PASSED"
-              exit 0
-            fi
-            echo "Waiting for container initialization..."
-            sleep 3
-          done
-          echo "Health check FAILED"
-          exit 1
+            # 5. Rollback or Fail Actions if Unhealthy
+            echo "ERROR: Health check timed out after $TIMEOUT seconds."
+            echo "Printing container logs for debugging:"
+            docker logs test-student-app
+            exit 1
 
-    - name: Set Failure Stage (Deploy)
-      if: failure() && steps.deploy_stage.outcome == 'failure'
-      run: echo "FAILED_STAGE=deploy" >> $GITHUB_ENV
+      - name: Set Failure Stage (Deploy)
+        if: failure() && steps.deploy_stage.outcome == 'failure'
+        run: echo "FAILED_STAGE=deploy" >> $GITHUB_ENV
 
-    - name: Notify Success
-      if: success()
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: ${{ secrets.SMTP_SERVER }}
-        server_port: ${{ secrets.SMTP_PORT }}
-        username: ${{ secrets.SMTP_USER }}
-        password: ${{ secrets.SMTP_PASS }}
-        subject: "🚀 SUCCESS: Deployment completed for ${{ github.repository }}"
-        to: ${{ secrets.NOTIFY_EMAIL }}
-        from: CI/CD Pipeline <noreply@github.com>
-        body: |
-          Deployment completed successfully!
+      - name: Notify Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "🚀 SUCCESS: Deployment completed for ${{ github.repository }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: CI/CD Pipeline <noreply@github.com>
+          body: |
+            Deployment completed successfully!
           
           • Branch: ${{ github.ref_name }}
           • Commit SHA: ${{ github.sha }}
@@ -145,19 +155,19 @@ jobs:
           • Target Host: ${{ secrets.EC2_HOST }}
           • Pipeline Run Link: https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}
 
-    - name: Notify Failure
-      if: failure()
-      uses: dawidd6/action-send-mail@v3
-      with:
-        server_address: ${{ secrets.SMTP_SERVER }}
-        server_port: ${{ secrets.SMTP_PORT }}
-        username: ${{ secrets.SMTP_USER }}
-        password: ${{ secrets.SMTP_PASS }}
-        subject: "❌ FAILURE: Pipeline Failed for ${{ github.repository }}"
-        to: ${{ secrets.NOTIFY_EMAIL }}
-        from: CI/CD Pipeline <noreply@github.com>
-        body: |
-          The pipeline execution failed.
+      - name: Notify Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "❌ FAILURE: Pipeline Failed for ${{ github.repository }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: CI/CD Pipeline <noreply@github.com>
+          body: |
+            The pipeline execution failed.
           
           • Failed Stage: ${{ env.FAILED_STAGE }}
           • Branch: ${{ github.ref_name }}
