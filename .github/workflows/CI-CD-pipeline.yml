@@ -90,7 +90,7 @@ jobs:
     - name: Deploy to EC2
       id: deploy_stage
       run: |
-        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << EOF
+        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
           # Log into ECR on target machine
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
@@ -102,27 +102,22 @@ jobs:
           docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           
           # Launch new container
-          docker run -d -p 80:5000 --name test-student-app 311925399650.dkr.ecr.us-east-1.amazonaws.com/flask-student-app:32a0ec1019847c5e0aa8367efaa6004b3f175974
-    
-    #Step 5 Verify Deploy Gate (/health Check)
-    - name: Verify Live Health Endpoint
-      if: success()
-      id: verify_stage
-      run: |
-        echo "Waiting for app initialization..."
-        sleep 10
-        # Poll the live endpoint up to 5 times
-        for i in {1..5}; do
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:5000/health || true)
-          if [ "$STATUS" -eq 200 ]; then
-            echo "Deployment verification successful with code 200!"
-            exit 0
-          fi
-          echo "Health check failed with status $STATUS. Retrying in 5 seconds..."
-          sleep 5
-        done
-        echo "Verification gate failed."
-        exit 1
+          docker run -d --name test-student-app -p ${{ env.EC2_PORT }}:5000 ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          
+          # 6. Deployment Verification Gate
+          echo "Verifying health endpoint..."
+          sleep 15
+          for i in {1..5}; do
+            if curl -s http://localhost:${{ env.EC2_PORT }}/health | grep -q "UP"; then
+              echo "Health check PASSED"
+              exit 0
+            fi
+            echo "Waiting for container initialization..."
+            sleep 3
+          done
+          echo "Health check FAILED"
+          exit 1
+        EOF
 
     - name: Set Failure Stage (Deploy)
       if: failure() && steps.deploy_stage.outcome == 'failure'
