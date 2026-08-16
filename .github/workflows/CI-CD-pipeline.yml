@@ -103,7 +103,7 @@ jobs:
           
           # Launch new container
           docker run -d \
-            --name test-student-app  \
+            --name test-student-app \
             -p 5000:5000 \
             -e MONGO_URI="${{ secrets.MONGO_URI }}" \
             --restart unless-stopped \
