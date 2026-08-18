@@ -126,7 +126,7 @@ jobs:
         EOF
 
     - name: Set Failure Stage (Deploy)
-      if: failure() && steps:deploy_stage.outcome == 'failure'
+      if: failure() && steps.deploy_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=deploy" >> $GITHUB_ENV
 
     - name: Notify Success
