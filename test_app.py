@@ -66,11 +66,11 @@ def test_delete_student(client):
     assert response.status_code == 200
     assert b"Temp User" not in response.data
 
-def test_health_route():
+def test_health_route(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json["status"] == "healthy"
 
-def test_failure_route():
+def test_failure_route(client):
     response = client.get("/error")
     assert response.status_code == 500
