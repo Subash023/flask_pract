@@ -1,8 +1,15 @@
-name: CI/CD Production Pipeline
+name: CI/CD Build and Deploy
 
 on:
   push:
     branches: [ "main" ]
+
+env:
+  AWS_REGION: us-east-1                    # Change to your AWS region
+  ECR_REPOSITORY: flask-student-app             # Change to your ECR repo name
+  CONTAINER_NAME: test_student_db
+  EC2_PORT: 5000
+  FAILED_STAGE: "None"
 
 jobs:
   pipeline:
@@ -14,7 +21,7 @@ jobs:
         image: mongo:latest
         ports:
           - 27017:27017
-
+          
     steps:
     # STEP 1: Repository Checkout (Upgraded to resolve Node 20 deprecation)
     - name: Checkout Code
@@ -38,110 +45,125 @@ jobs:
       run: |
         pytest test_app.py
 
+    - name: Set Failure Stage (Test)
+      if: failure() && steps.test_stage.outcome == 'failure'
+      run: echo "FAILED_STAGE=test" >> $GITHUB_ENV
+
     # STEP 4 & 5: Authenticate AWS, Build & Push Tagged Image
-    # (Using modern aws-actions targeting Node 24)
     - name: Configure AWS Credentials
-      if: success()
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+        aws-region: ${{ env.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      if: success()
+    - name: Log in to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, Tag, and Push Image to Amazon ECR
-      if: success()
+    - name: Build Docker Image
       id: build_stage
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-        IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker build -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} .
+        docker tag ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
-    # STEP 6: Deploy Container to EC2 via SSH
-    - name: Deploy to EC2 Instance
-      if: success()
+    - name: Set Failure Stage (Build)
+      if: failure() && steps.build_stage.outcome == 'failure'
+      run: echo "FAILED_STAGE=build" >> $GITHUB_ENV
+
+    - name: Push to ECR
+      id: push_stage
+      run: |
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+    - name: Set Failure Stage (Push)
+      if: failure() && steps.push_stage.outcome == 'failure'
+      run: echo "FAILED_STAGE=push" >> $GITHUB_ENV
+
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy to EC2 & Verify Health
       id: deploy_stage
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          # Authenticate Docker daemon with ECR
-          aws ecr get-login-password --region *** | docker login --username AWS --password-stdin 311925399650.dkr.ecr.***.amazonaws.com 2>/dev/null
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          # Log into ECR on target machine
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
-          # Stop existing container safely if running
-          docker stop test-student-app || true
-          docker rm test-student-app || true
+          # Clean up old container if running
+          docker stop ${{ env.CONTAINER_NAME }} || true
+          docker rm ${{ env.CONTAINER_NAME }} || true
           
-          # Run the newly built container with restart insurance policies
+          # Pull new image
+          docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          
+          # Launch new container
           docker run -d \
-            --name test-student-app \
-            -p 5000:5000 \
+            --name ${{ env.CONTAINER_NAME }} \
+            -p ${{ env.EC2_PORT }}:${{ env.EC2_PORT }} \
             -e MONGO_URI="${{ secrets.MONGO_URI }}" \
             --restart unless-stopped \
             ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
-
-    # STEP 7: Verify Deploy Gate (/health Check)
-    - name: Healthcheck Python API
-      run: |
-          echo "Checking app health..."
-          for i in {1..6}; do
-            if curl -s -f http://***:5000/; then
-              echo "App is healthy!"
+          
+          # Deployment Verification Gate
+          echo "Verifying health endpoint..."
+          sleep 30
+          for i in {1..5}; do
+            if curl -s http://localhost:${{ env.EC2_PORT }}/health | grep -q "UP"; then
+              echo "Health check PASSED"
               exit 0
             fi
-            echo "App not ready, retrying in 10 seconds..."
-            sleep 10
+            echo "Waiting for container initialization..."
+            sleep 15
           done
-          echo "Healthcheck failed!"
+          echo "Health check FAILED"
           exit 1
+        EOF
 
-    # STEP 8: Notify (Customized Success Email Alert - Upgraded to v4)
-    - name: Send Deployment Success Email
+    - name: Set Failure Stage (Deploy)
+      if: failure() && steps:deploy_stage.outcome == 'failure'
+      run: echo "FAILED_STAGE=deploy" >> $GITHUB_ENV
+
+    - name: Notify Success
       if: success()
-      uses: dawidd6/action-send-mail@v4
+      uses: dawidd6/action-send-mail@v3
       with:
-        server_address: smtp.gmail.com
-        server_port: 465
+        server_address: ${{ secrets.SMTP_SERVER }}
+        server_port: ${{ secrets.SMTP_PORT }}
         username: ${{ secrets.SMTP_USER }}
         password: ${{ secrets.SMTP_PASS }}
-        subject: "🚀 DEPLOYMENT SUCCESS: Commit ${{ github.sha }}"
+        subject: "🚀 SUCCESS: Deployment completed for ${{ github.repository }}"
         to: ${{ secrets.NOTIFY_EMAIL }}
-        from: "CI-CD Pipeline <automation@yourdomain.com>"
+        from: CI/CD Pipeline <noreply@github.com>
         body: |
-          The deployment pipeline completed successfully!
+          Deployment completed successfully!
           
-          - Commit SHA: ${{ github.sha }}
-          - Image Tag: ${{ github.sha }}
-          - Target Host: http://${{ secrets.EC2_HOST }}:5000/health
-          
-          All tests passed, and the container state is running under 'unless-stopped'.
+          • Branch: ${{ github.ref_name }}
+          • Commit SHA: ${{ github.sha }}
+          • Docker Tag: ${{ github.sha }}
+          • Target Host: ${{ secrets.EC2_HOST }}
+          • Pipeline Run Link: https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}
 
-    # STEP 8: Notify (Customized Failure Email Alert - Upgraded to v4)
-    - name: Send Deployment Failure Email
+    - name: Notify Failure
       if: failure()
-      uses: dawidd6/action-send-mail@v4
+      uses: dawidd6/action-send-mail@v3
       with:
-        server_address: smtp.gmail.com
-        server_port: 465
+        server_address: ${{ secrets.SMTP_SERVER }}
+        server_port: ${{ secrets.SMTP_PORT }}
         username: ${{ secrets.SMTP_USER }}
         password: ${{ secrets.SMTP_PASS }}
-        subject: "❌ DEPLOYMENT FAILURE: Build Broken"
+        subject: "❌ FAILURE: Pipeline Failed for ${{ github.repository }}"
         to: ${{ secrets.NOTIFY_EMAIL }}
-        from: "CI-CD Pipeline <automation@yourdomain.com>"
+        from: CI/CD Pipeline <noreply@github.com>
         body: |
-          The pipeline execution failed. A broken application state was prevented from affecting runtime infrastructure.
+          The pipeline execution failed.
           
-          - Commit SHA: ${{ github.sha }}
-          - Triggered By: ${{ github.actor }}
-          
-          Please review the GitHub Actions logging panel to isolate which sequence stage failed execution.
+          • Failed Stage: ${{ env.FAILED_STAGE }}
+          • Branch: ${{ github.ref_name }}
+          • Commit SHA: ${{ github.sha }}
+          • Review Logs Immediately: https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}
