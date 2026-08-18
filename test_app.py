@@ -74,3 +74,4 @@ def test_health_route(client):
 def test_failure_route(client):
     response = client.get("/error")
     assert response.status_code == 404
+    
