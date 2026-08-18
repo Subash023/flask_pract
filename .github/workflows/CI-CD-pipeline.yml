@@ -121,7 +121,6 @@ jobs:
           done
           echo "Health check FAILED"
           exit 1
-        EOF
 
     - name: Set Failure Stage (Deploy)
       if: failure() && steps.deploy_stage.outcome == 'failure'
