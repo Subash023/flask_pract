@@ -102,11 +102,11 @@ jobs:
           
           # Launch new container
           docker run -d \
-            --name ${{ env.CONTAINER_NAME }} \
-            -p ${{ env.EC2_PORT }}:${{ env.EC2_PORT }} \
-            -e MONGO_URI="${{ secrets.MONGO_URI }}" \
+            --name test_student_db \
+            -p 5000:5000 \
+            -e MONGO_URI="***" \
             --restart unless-stopped \
-            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+            311925399650.dkr.ecr.us-east-1.amazonaws.com/flask-student-app:9fb31d6b96853c9bf739759d1f3e58ced225cce5
           
           # Deployment Verification Gate
           echo "Verifying health endpoint..."
