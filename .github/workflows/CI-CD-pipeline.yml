@@ -94,20 +94,25 @@ jobs:
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
           # Clean up old container if running
-          docker stop ${{ env.CONTAINER_NAME }} || true
-          docker rm ${{ env.CONTAINER_NAME }} || true
-          
+          docker stop test_student_db || true
+          docker rm test_student_db || true
+
+          echo "🚀 Attempting to launch new container..."
+
           # Pull new image
           docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           
           # Launch new container
-          docker run -d \
-            --name test_student_db \
-            -p 5000:5000 \
-            -e MONGO_URI="***" \
-            --restart unless-stopped \
-            311925399650.dkr.ecr.us-east-1.amazonaws.com/flask-student-app:latest
-
+          if ! docker run -d \
+          --name test_student_db \
+          -p 5000:5000 \
+          -e MONGO_URI="***" \
+          --restart unless-stopped \
+          ://amazonaws.com 2>docker_err.log; then
+          echo "❌ Docker run failed to execute!"
+          cat docker_err.log
+          exit 1
+          
     - name: Deployment Verification Gate
       run: |
           echo "Verifying health endpoint..."
