@@ -104,14 +104,15 @@ jobs:
           
           # Launch new container
           if ! docker run -d \
-          --name test_student_db \
-          -p 5000:5000 \
-          -e MONGO_URI="***" \
-          --restart unless-stopped \
-          ://amazonaws.com 2>docker_err.log; then
-          echo "❌ Docker run failed to execute!"
-          cat docker_err.log
-          exit 1
+            --name test_student_db \
+            -p 5000:5000 \
+            -e MONGO_URI="***" \
+            --restart unless-stopped \
+            ://amazonaws.com 2>docker_err.log; then
+              echo "❌ Docker run failed to execute!"
+              cat docker_err.log
+              exit 1
+          fi
           
     - name: Deployment Verification Gate
       run: |
