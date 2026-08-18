@@ -107,8 +107,9 @@ jobs:
             -e MONGO_URI="***" \
             --restart unless-stopped \
             311925399650.dkr.ecr.us-east-1.amazonaws.com/flask-student-app:latest
-                  
-          # Deployment Verification Gate
+
+    - name: Deployment Verification Gate
+      run: |
           echo "Verifying health endpoint..."
           sleep 30
           for i in {1..5}; do
