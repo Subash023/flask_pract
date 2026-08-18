@@ -119,8 +119,19 @@ jobs:
             fi
             echo "Waiting for container initialization..."
             sleep 15
+          
           done
-          echo "Health check FAILED"
+
+            echo "❌ Health check FAILED. Fetching container debugging telemetry..."
+            echo "=== CONTAINER STATUS ==="
+            docker ps -a --filter "name=test_student_db"
+
+            echo "=== APPLICATION ERROR LOGS ==="
+            docker logs test_student_db --tail 50
+
+            echo "=== CONTAINER INSPECT (Network/Ports) ==="
+            docker inspect --format='{{json .State}}' test_student_db
+
           exit 1
 
     - name: Set Failure Stage (Deploy)
