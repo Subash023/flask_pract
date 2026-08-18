@@ -81,17 +81,15 @@ jobs:
       if: failure() && steps.push_stage.outcome == 'failure'
       run: echo "FAILED_STAGE=push" >> $GITHUB_ENV
 
-    - name: Setup SSH Key
-      run: |
-        mkdir -p $HOME/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > $HOME/.ssh/id_rsa
-        chmod 600 $HOME/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> $HOME/.ssh/known_hosts
-
-    - name: Deploy to EC2 & Verify Health
+    - name: Deploy to EC2 Instance
+      if: success()
       id: deploy_stage
-      run: |
-        ssh -i $HOME/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
           # Log into ECR on target machine
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
