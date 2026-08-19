@@ -25,11 +25,11 @@ jobs:
     steps:
     # STEP 1: Repository Checkout (Upgraded to resolve Node 20 deprecation)
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     # STEP 2: Install Dependencies & Setup Runtime (Consolidated & Upgraded to v5)
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: '3.11'
     
@@ -49,7 +49,7 @@ jobs:
 
     # STEP 4 & 5: Authenticate AWS, Build & Push Tagged Image
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v5
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -130,7 +130,7 @@ jobs:
 
     - name: Notify Success
       if: success()
-      uses: dawidd6/action-send-mail@v3
+      uses: dawidd6/action-send-mail@v4
       with:
         server_address: ${{ secrets.SMTP_SERVER }}
         server_port: ${{ secrets.SMTP_PORT }}
